@@ -59,8 +59,15 @@ uint32_t Piano_LUT = {};
 uint32_t Guitar_LUT = {};
 uint32_t Drum_LUT = {};
 
-
-
+// --- Pointers for easy waveform switching ---
+#define NUM_WAVEFORMS 6
+// Create an array of pointers to the LUTs
+const uint32_t* lut_p[NUM_WAVEFORMS] = {Sin_LUT, Saw_LUT, Triangle_LUT, Piano_LUT, Guitar_LUT, Drum_LUT};
+// Create a parallel array of names for the LCD
+const char* lut_names[NUM_WAVEFORMS] = {"Sine", "Sawtooth", "Triangle", "Piano", "Guitar", "Drum"};
+// This global index tracks the current waveform.
+// 'volatile' is critical because it's modified in an ISR.
+volatile uint8_t current_waveform = 0;
 
 // TODO: Equation to calculate TIM2_Ticks
 // This formula determines the sample rate. It calculates how many TIM2 clock
@@ -68,7 +75,6 @@ uint32_t Drum_LUT = {};
 // for the timer counting from 0 up to this value.
 uint32_t TIM2_Ticks = (TIM2CLK / (NS * F_SIGNAL)) - 1; // How often to write new LUT value
 uint32_t DestAddress = (uint32_t) &(TIM3->CCR3); // Write LUT TO TIM3->CCR3 to modify PWM duty cycle
-
 
 
 /* USER CODE END PV */
@@ -232,7 +238,7 @@ static void MX_TIM2_Init(void)
   htim2.Instance = TIM2;
   htim2.Init.Prescaler = 0;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 4294967295;
+  htim2.Init.Period = TIM2_Ticks - 1;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
@@ -423,13 +429,38 @@ static void MX_GPIO_Init(void)
 void EXTI0_IRQHandler(void){
 
 	// TODO: Debounce using HAL_GetTick()
+	// Use a static variable to remember the time of the last valid press.
+	// 'static' means this variable keeps its value between function calls.
+	static uint32_t last_interrupt_time = 0;
+	uint32_t interrupt_time = HAL_GetTick(); // Get current time in milliseconds
 
+  // Only process the interrupt if more than 200ms has passed since the last valid press
+  if (interrupt_time - last_interrupt_time > 200) 
+  {
+    last_interrupt_time = interrupt_time; // Update last valid press time
 
+  // --- Safely Reconfigure the DMA Transfer ---
 	// TODO: Disable DMA transfer and abort IT, then start DMA in IT mode with new LUT and re-enable transfer
 	// HINT: Consider using C's "switch" function to handle LUT changes
+  HAL_TIM_DISABLE_DMA(&htim2, TIM_DMA_CC1); // Disable DMA transfer 
+  HAL_DMA_Abort_IT(&hdma_tim2_ch1);
 
+  // CYCLE TO THE NEXT WAVEFORM:
+	// Increment the waveform index, wrapping around to 0 if we reach the end.
+	current_waveform = (current_waveform + 1) % NUM_WAVEFORMS;
 
+	// UPDATE THE LCD:
+	lcd_clear();
+	lcd_putstr((char*)lut_names[current_waveform]);
 
+	// START THE NEW TRANSFER:
+	// Start a new DMA transfer, using the pointer from our array to select the new LUT.
+	HAL_DMA_Start_IT(&hdma_tim2_ch1, (uint32_t)lut_p[current_waveform], DestAddress, NS);
+
+	// RE-ENABLE THE DMA TRIGGER:
+	// Re-enable the DMA request from TIM2 to resume the audio output.
+		__HAL_TIM_ENABLE_DMA(&htim2, TIM_DMA_CC1);
+	}
 
 	HAL_GPIO_EXTI_IRQHandler(Button0_Pin); // Clear interrupt flags
 }
