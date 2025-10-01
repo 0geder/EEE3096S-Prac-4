@@ -125,33 +125,36 @@ int main(void)
   LCD_Init();
 
   // --- Task 4: Configure and Start the Sound Generation ---
-
-  // 1. Start TIM3 in PWM mode on channel 3
+ 
+  // TODO: Start TIM3 in PWM mode on channel 3
   // This enables the PWM output pin that connects to the amplifier.
   // The PWM signal's duty cycle will be modulated to create the sound.
-  // TODO: Start TIM3 in PWM mode on channel 3
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_3);
 
-  // 2. Start TIM2 in base timer mode.
+  // TODO: Start TIM2 in Output Compare (OC) mode on channel 1
   // This starts the "metronome" timer. It will now begin generating update/compare
   // events at the sample rate we calculated (F_sample = NS * F_SIGNAL).
-  // TODO: Start TIM2 in Output Compare (OC) mode on channel 1
   HAL_TIM_Base_Start(&htim2);
 
-  // 3. Start the DMA in Interrupt mode.
+  // TODO: Start DMA in IT mode on TIM2->CH1. Source is LUT and Dest is TIM3->CCR3; start with Sine LUT
   // This configures and enables the DMA channel. It tells the DMA:
   // - Source: The beginning of the Sin_LUT array.
   // - Destination: The address of TIM3's Channel 3 Compare Register (CCR3).
   // - Length: The number of samples in our LUT (NS).
   // The DMA is in Circular Mode, so it will automatically wrap around to the
   // start of the LUT after transferring the last sample.
-  // TODO: Start DMA in IT mode on TIM2->CH1. Source is LUT and Dest is TIM3->CCR3; start with Sine LUT
   HAL_DMA_Start_IT(&hdma_tim2_ch1, (uint32_t)Sin_LUT, DestAddress, NS);
 
 
   // TODO: Write current waveform to LCD(Sine is the first waveform)
+  lcd_putstr("Sine");
 
   // TODO: Enable DMA (start transfer from LUT to CCR)
+  // This is the final, crucial step that links the metronome to the performer.
+  // It tells TIM2: "From now on, whenever your Channel 1 Compare event occurs,
+  // send a trigger signal to the DMA controller."
+  // This starts the continuous, automatic transfer
+  __HAL_TIM_ENABLE_DMA(&htim2, TIM_DMA_CC1);
 
   /* USER CODE END 2 */
 
