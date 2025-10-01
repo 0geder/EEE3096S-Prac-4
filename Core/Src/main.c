@@ -34,9 +34,9 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 // TODO: Add values for below variables
-#define NS        // Number of samples in LUT
-#define TIM2CLK   // STM Clock frequency: Hint You might want to check the ioc file
-#define F_SIGNAL  	// Frequency of output analog signal
+#define NS    256    // Number of samples in LUT
+#define TIM2CLK  16000000 // STM Clock frequency: Hint You might want to check the ioc file
+#define F_SIGNAL  440	// Frequency of output analog signal
 
 /* USER CODE END PD */
 
@@ -62,10 +62,13 @@ uint32_t Drum_LUT = {};
 
 
 
-
 // TODO: Equation to calculate TIM2_Ticks
-uint32_t TIM2_Ticks = 0; // How often to write new LUT value
+// This formula determines the sample rate. It calculates how many TIM2 clock
+// cycles must pass before the next sample is sent via DMA. The -1 accounts
+// for the timer counting from 0 up to this value.
+uint32_t TIM2_Ticks = (TIM2CLK / (NS * F_SIGNAL)) - 1; // How often to write new LUT value
 uint32_t DestAddress = (uint32_t) &(TIM3->CCR3); // Write LUT TO TIM3->CCR3 to modify PWM duty cycle
+
 
 
 /* USER CODE END PV */
@@ -118,11 +121,33 @@ int main(void)
   MX_TIM2_Init();
   MX_TIM3_Init();
   /* USER CODE BEGIN 2 */
+  // Initialize the LCD display for user feedback
+  LCD_Init();
+
+  // --- Task 4: Configure and Start the Sound Generation ---
+
+  // 1. Start TIM3 in PWM mode on channel 3
+  // This enables the PWM output pin that connects to the amplifier.
+  // The PWM signal's duty cycle will be modulated to create the sound.
   // TODO: Start TIM3 in PWM mode on channel 3
+  HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_3);
 
+  // 2. Start TIM2 in base timer mode.
+  // This starts the "metronome" timer. It will now begin generating update/compare
+  // events at the sample rate we calculated (F_sample = NS * F_SIGNAL).
   // TODO: Start TIM2 in Output Compare (OC) mode on channel 1
+  HAL_TIM_Base_Start(&htim2);
 
+  // 3. Start the DMA in Interrupt mode.
+  // This configures and enables the DMA channel. It tells the DMA:
+  // - Source: The beginning of the Sin_LUT array.
+  // - Destination: The address of TIM3's Channel 3 Compare Register (CCR3).
+  // - Length: The number of samples in our LUT (NS).
+  // The DMA is in Circular Mode, so it will automatically wrap around to the
+  // start of the LUT after transferring the last sample.
   // TODO: Start DMA in IT mode on TIM2->CH1. Source is LUT and Dest is TIM3->CCR3; start with Sine LUT
+  HAL_DMA_Start_IT(&hdma_tim2_ch1, (uint32_t)Sin_LUT, DestAddress, NS);
+
 
   // TODO: Write current waveform to LCD(Sine is the first waveform)
 
